@@ -1,0 +1,170 @@
+specification {
+  element Person {
+    style {
+      shape person
+    }
+  }
+  element System {
+    style {
+      shape rectangle
+    }
+  }
+  element Container {
+    style {
+      shape rectangle
+    }
+  }
+  element Database {
+    style {
+      shape cylinder
+    }
+  }
+  element Queue {
+    style {
+      shape queue
+    }
+  }
+}
+
+model {
+  buyer = Person 'Buyer'
+  seller = Person 'Seller'
+  
+  marketplace = System 'Marketplace' {
+    web_app = Container 'Web Application' 'React/Vue.js' {
+      style {
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/React-Dark.svg
+      }
+    }
+    api_gateway = Container 'API Gateway' 'FastAPI/Nginx' {
+      style {
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/FastAPI.svg
+      }
+    }
+    
+    // Core Services
+    user_service = Container 'User Service' 'Python/FastAPI' {
+      style {
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/Python-Dark.svg
+        color green
+      }
+    }
+    product_service = Container 'Product Service' 'Python/FastAPI' {
+      style {
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/Python-Dark.svg
+        color green
+      }
+    }
+    order_service = Container 'Order Service' 'Python/FastAPI' {
+      style {
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/Python-Dark.svg
+        color green
+      }
+    }
+    payment_service = Container 'Payment Service' 'Python/FastAPI' {
+      style {
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/Python-Dark.svg
+        color green
+      }
+    }
+    notification_service = Container 'Notification Service' 'Python/FastAPI' {
+      style {
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/Python-Dark.svg
+        color green
+      }
+    }
+    
+    recommendation_service = Container 'Recommendation Service' 'Python/FastAPI' {
+      style {
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/Python-Dark.svg
+        color green
+      }
+    }
+    
+    // Databases
+    user_db = Database 'User Database' 'PostgreSQL' {
+      style {
+        color blue
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/PostgreSQL-Dark.svg
+      }
+    }
+    product_db = Database 'Product Database' 'PostgreSQL' {
+      style {
+        color blue
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/PostgreSQL-Dark.svg
+      }
+    }
+    order_db = Database 'Order Database' 'PostgreSQL' {
+      style {
+        color blue
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/PostgreSQL-Dark.svg
+      }
+    }
+    payment_db = Database 'Payment Database' 'PostgreSQL' {
+      style {
+        color blue
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/PostgreSQL-Dark.svg
+      }
+    }
+    notification_db = Database 'Notification Database' 'PostgreSQL' {
+      style {
+        color blue
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/PostgreSQL-Dark.svg
+      }
+    }
+    
+    recommendation_db = Database 'Recommendation Database' 'PostgreSQL' {
+      style {
+        color blue
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/PostgreSQL-Dark.svg
+      }
+    }
+    
+    message_queue = Queue 'Message Queue' 'Kafka/RabbitMQ' {
+      style {
+        color primary
+        icon https://raw.githubusercontent.com/tandpfun/skill-icons/59059d9d1a2c092696dc66e00931cc1181a4ce1f/icons/RabbitMQ-Dark.svg
+      }
+    }
+    
+    // Internal interactions
+    web_app -> api_gateway 'API requests'
+    
+    api_gateway -> user_service 'Authentication'
+    api_gateway -> product_service 'Product search'
+    api_gateway -> order_service 'Order creation'
+    api_gateway -> payment_service 'Payment processing'
+    api_gateway -> notification_service 'Notification management'
+    api_gateway -> recommendation_service 'Personalized recommendations'
+    
+    user_service -> user_db 'User data'
+    product_service -> product_db 'Product data'
+    order_service -> order_db 'Order data'
+    payment_service -> payment_db 'Payment data'
+    notification_service -> notification_db 'Notification data'
+    recommendation_service -> recommendation_db 'Recommendation models'
+    
+    // Inter-service communication
+    order_service -> user_service 'User validation'
+    order_service -> product_service 'Product validation'
+    order_service -> payment_service 'Payment creation'
+    order_service -> message_queue 'Order notification'
+    payment_service -> message_queue 'Payment notification'
+    message_queue -> notification_service 'Notification delivery'
+    
+    // Recommendation data collection
+    order_service -> message_queue 'Purchase events'
+    product_service -> message_queue 'View events'
+    message_queue -> recommendation_service 'User behavior data'
+  }
+  
+  // External interactions
+  buyer -> marketplace.web_app 'Browse and purchase'
+  seller -> marketplace.web_app 'Manage products'
+}
+
+views {
+  view index {
+    include *
+  }
+}
