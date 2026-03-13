@@ -6,7 +6,7 @@ from uuid import UUID
 from datetime import datetime, timedelta
 from decimal import Decimal
 from app.models import Order, OrderItem, UserOperation, OrderStatus, OperationType
-from app.schemas import OrderCreate, OrderUpdate, OrderResponse
+from app.generated import OrderCreate, OrderUpdate, OrderResponse
 from app.exceptions import (
     OrderNotFoundException, OrderLimitExceededException, OrderHasActiveException,
     InvalidStateTransitionException, OrderOwnershipViolationException
@@ -163,7 +163,7 @@ class OrderService:
         order.status = OrderStatus.CANCELED
         
         await self.db.commit()
-        await self.db.refresh(order, ['items'])
+        await self.db.refresh(order)
         
         await kafka_producer.send_event('order.canceled', {
             'order_id': str(order.id),
