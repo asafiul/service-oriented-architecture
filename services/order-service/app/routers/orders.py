@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from app.database import get_db
-from app.generated import OrderCreate, OrderResponse
+from app.generated import OrderCreate, OrderUpdate, OrderResponse
 from app.services.order_service import OrderService
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
@@ -28,6 +28,17 @@ async def get_order(
 ):
     service = OrderService(db)
     order = await service.get_order(id, user_id)
+    return OrderResponse.model_validate(order)
+
+@router.put("/{id}", response_model=OrderResponse)
+async def update_order(
+    id: UUID,
+    order_data: OrderUpdate,
+    user_id: UUID = Depends(get_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    service = OrderService(db)
+    order = await service.update_order(id, user_id, order_data)
     return OrderResponse.model_validate(order)
 
 @router.post("/{id}/cancel", response_model=OrderResponse)

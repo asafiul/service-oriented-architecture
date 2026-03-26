@@ -16,13 +16,22 @@ async def create_promo_code(
     promo_code = await service.create_promo_code(promo_data)
     return PromoCodeResponse.model_validate(promo_code)
 
-@router.get("/{code}", response_model=PromoCodeResponse)
-async def get_promo_code(
+@router.get("/by-code/{code}", response_model=PromoCodeResponse)
+async def get_promo_code_by_code(
     code: str,
     db: AsyncSession = Depends(get_db)
 ):
     service = PromoCodeService(db)
     promo_code = await service.get_promo_code_by_code(code)
+    return PromoCodeResponse.model_validate(promo_code)
+
+@router.get("/{id}", response_model=PromoCodeResponse)
+async def get_promo_code_by_id(
+    id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    service = PromoCodeService(db)
+    promo_code = await service.get_promo_code_by_id(id)
     return PromoCodeResponse.model_validate(promo_code)
 
 @router.post("/{id}/increment", status_code=status.HTTP_200_OK)

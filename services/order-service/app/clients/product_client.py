@@ -23,7 +23,18 @@ class ProductClient:
     async def get_promo_code(self, code: str) -> Optional[Dict[str, Any]]:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
-                response = await client.get(f"{self.base_url}/promo-codes/{code}")
+                response = await client.get(f"{self.base_url}/promo-codes/by-code/{code}")
+                if response.status_code == 404:
+                    return None
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPError as e:
+                raise ProductServiceException(str(e))
+    
+    async def get_promo_code_by_id(self, promo_id: UUID) -> Optional[Dict[str, Any]]:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            try:
+                response = await client.get(f"{self.base_url}/promo-codes/{promo_id}")
                 if response.status_code == 404:
                     return None
                 response.raise_for_status()

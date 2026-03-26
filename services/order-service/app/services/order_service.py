@@ -9,7 +9,9 @@ from app.models import Order, OrderItem, UserOperation, OrderStatus, OperationTy
 from app.generated import OrderCreate, OrderUpdate, OrderResponse
 from app.exceptions import (
     OrderNotFoundException, OrderLimitExceededException, OrderHasActiveException,
-    InvalidStateTransitionException, OrderOwnershipViolationException
+    InvalidStateTransitionException, OrderOwnershipViolationException,
+    ProductNotFoundException, ProductInactiveException, InsufficientStockException,
+    PromoCodeInvalidException, PromoCodeMinAmountException
 )
 from app.clients.product_client import ProductClient
 from app.kafka_producer import kafka_producer
@@ -58,16 +60,29 @@ class OrderService:
         
         total_amount = Decimal(0)
         order_items_data = []
+        insufficient_stock_items = []
+        
+        for item in order_data.items:
+            try:
+                product = await self.product_client.get_product(item.product_id)
+            except Exception:
+                raise ProductNotFoundException(str(item.product_id))
+            
+            if product['status'] != 'ACTIVE':
+                raise ProductInactiveException(str(item.product_id))
+            
+            if product['stock'] < item.quantity:
+                insufficient_stock_items.append({
+                    'product_id': str(item.product_id),
+                    'requested': item.quantity,
+                    'available': product['stock']
+                })
+        
+        if insufficient_stock_items:
+            raise InsufficientStockException(insufficient_stock_items)
         
         for item in order_data.items:
             product = await self.product_client.get_product(item.product_id)
-            
-            if product['status'] != 'ACTIVE':
-                raise Exception(f"Товар {item.product_id} неактивен")
-            
-            if product['stock'] < item.quantity:
-                raise Exception(f"Недостаточно товара {item.product_id} на складе")
-            
             await self.product_client.reserve_stock(item.product_id, item.quantity)
             
             price = Decimal(str(product['price']))
@@ -85,17 +100,36 @@ class OrderService:
         if order_data.promo_code:
             promo = await self.product_client.get_promo_code(order_data.promo_code)
             if promo:
-                if Decimal(str(promo['min_order_amount'])) <= total_amount:
-                    promo_code_id = UUID(promo['id'])
-                    
-                    if promo['discount_type'] == 'PERCENTAGE':
-                        discount = total_amount * Decimal(str(promo['discount_value'])) / Decimal(100)
-                        discount_amount = min(discount, total_amount * Decimal('0.7'))
-                    else:
-                        discount_amount = min(Decimal(str(promo['discount_value'])), total_amount)
-                    
-                    total_amount -= discount_amount
-                    await self.product_client.increment_promo_usage(promo_code_id)
+                if not promo.get('active', True):
+                    raise PromoCodeInvalidException("промокод неактивен")
+                
+                if promo.get('current_uses', 0) >= promo.get('max_uses', 999999):
+                    raise PromoCodeInvalidException("достигнут лимит использований")
+                
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc)
+                valid_from = datetime.fromisoformat(promo['valid_from'].replace('Z', '+00:00')) if promo.get('valid_from') else None
+                valid_until = datetime.fromisoformat(promo['valid_until'].replace('Z', '+00:00')) if promo.get('valid_until') else None
+                
+                if valid_from and now < valid_from:
+                    raise PromoCodeInvalidException("промокод еще не действует")
+                if valid_until and now > valid_until:
+                    raise PromoCodeInvalidException("срок действия промокода истек")
+                
+                min_amount = Decimal(str(promo['min_order_amount']))
+                if total_amount < min_amount:
+                    raise PromoCodeMinAmountException(float(min_amount), float(total_amount))
+                
+                promo_code_id = UUID(promo['id'])
+                
+                if promo['discount_type'] == 'PERCENTAGE':
+                    discount = total_amount * Decimal(str(promo['discount_value'])) / Decimal(100)
+                    discount_amount = min(discount, total_amount * Decimal('0.7'))
+                else:
+                    discount_amount = min(Decimal(str(promo['discount_value'])), total_amount)
+                
+                total_amount -= discount_amount
+                await self.product_client.increment_promo_usage(promo_code_id)
         
         order = Order(
             user_id=user_id,
@@ -128,6 +162,95 @@ class OrderService:
             'user_id': str(user_id),
             'total_amount': float(total_amount),
             'items_count': len(order_items_data)
+        })
+        
+        return order
+    
+    async def update_order(self, order_id: UUID, user_id: UUID, order_data: OrderUpdate) -> Order:
+        order = await self.get_order(order_id, user_id)
+        
+        if order.status != OrderStatus.CREATED:
+            raise InvalidStateTransitionException(order.status.value, "UPDATE")
+        
+        await self._check_rate_limit(user_id, OperationType.UPDATE_ORDER)
+        
+        for item in order.items:
+            await self.product_client.release_stock(item.product_id, item.quantity)
+        
+        insufficient_stock_items = []
+        for item in order_data.items:
+            try:
+                product = await self.product_client.get_product(item.product_id)
+            except Exception:
+                raise ProductNotFoundException(str(item.product_id))
+            
+            if product['status'] != 'ACTIVE':
+                raise ProductInactiveException(str(item.product_id))
+            
+            if product['stock'] < item.quantity:
+                insufficient_stock_items.append({
+                    'product_id': str(item.product_id),
+                    'requested': item.quantity,
+                    'available': product['stock']
+                })
+        
+        if insufficient_stock_items:
+            raise InsufficientStockException(insufficient_stock_items)
+        
+        await self.db.execute(
+            select(OrderItem).where(OrderItem.order_id == order_id)
+        )
+        for item in order.items:
+            await self.db.delete(item)
+        
+        total_amount = Decimal(0)
+        order_items_data = []
+        
+        for item in order_data.items:
+            product = await self.product_client.get_product(item.product_id)
+            await self.product_client.reserve_stock(item.product_id, item.quantity)
+            
+            price = Decimal(str(product['price']))
+            total_amount += price * item.quantity
+            
+            order_item = OrderItem(
+                order_id=order.id,
+                product_id=item.product_id,
+                quantity=item.quantity,
+                price_at_order=price
+            )
+            self.db.add(order_item)
+        
+        discount_amount = Decimal(0)
+        if order.promo_code_id:
+            promo = await self.product_client.get_promo_code_by_id(order.promo_code_id)
+            if promo:
+                min_amount = Decimal(str(promo['min_order_amount']))
+                if total_amount >= min_amount:
+                    if promo['discount_type'] == 'PERCENTAGE':
+                        discount = total_amount * Decimal(str(promo['discount_value'])) / Decimal(100)
+                        discount_amount = min(discount, total_amount * Decimal('0.7'))
+                    else:
+                        discount_amount = min(Decimal(str(promo['discount_value'])), total_amount)
+                else:
+                    await self.product_client.decrement_promo_usage(order.promo_code_id)
+                    order.promo_code_id = None
+        
+        order.total_amount = total_amount - discount_amount
+        order.discount_amount = discount_amount
+        
+        operation = UserOperation(
+            user_id=user_id,
+            operation_type=OperationType.UPDATE_ORDER
+        )
+        self.db.add(operation)
+        
+        await self.db.commit()
+        await self.db.refresh(order)
+        
+        await kafka_producer.send_event('order.updated', {
+            'order_id': str(order.id),
+            'user_id': str(user_id)
         })
         
         return order

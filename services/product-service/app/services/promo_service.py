@@ -28,6 +28,15 @@ class PromoCodeService:
             raise Exception(f"Промокод {code} не найден")
         return promo_code
     
+    async def get_promo_code_by_id(self, promo_id: UUID) -> PromoCode:
+        result = await self.db.execute(
+            select(PromoCode).where(PromoCode.id == promo_id)
+        )
+        promo_code = result.scalar_one_or_none()
+        if not promo_code:
+            raise Exception(f"Промокод с ID {promo_id} не найден")
+        return promo_code
+    
     async def increment_usage(self, promo_id: UUID) -> None:
         result = await self.db.execute(
             select(PromoCode).where(PromoCode.id == promo_id)

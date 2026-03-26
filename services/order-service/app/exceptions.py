@@ -63,3 +63,44 @@ class ValidationException(MarketplaceException):
             status_code=status.HTTP_400_BAD_REQUEST,
             details=details
         )
+
+class ProductNotFoundException(MarketplaceException):
+    def __init__(self, product_id: str):
+        super().__init__(
+            error_code="PRODUCT_NOT_FOUND",
+            message=f"Товар с ID {product_id} не найден",
+            status_code=status.HTTP_404_NOT_FOUND
+        )
+
+class ProductInactiveException(MarketplaceException):
+    def __init__(self, product_id: str):
+        super().__init__(
+            error_code="PRODUCT_INACTIVE",
+            message=f"Товар с ID {product_id} неактивен",
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+class InsufficientStockException(MarketplaceException):
+    def __init__(self, details: list):
+        super().__init__(
+            error_code="INSUFFICIENT_STOCK",
+            message="Недостаточно товара на складе",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            details={"products": details}
+        )
+
+class PromoCodeInvalidException(MarketplaceException):
+    def __init__(self, reason: str):
+        super().__init__(
+            error_code="PROMO_CODE_INVALID",
+            message=f"Промокод недействителен: {reason}",
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+
+class PromoCodeMinAmountException(MarketplaceException):
+    def __init__(self, min_amount: float, current_amount: float):
+        super().__init__(
+            error_code="PROMO_CODE_MIN_AMOUNT",
+            message=f"Минимальная сумма заказа для промокода: {min_amount}, текущая сумма: {current_amount}",
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
