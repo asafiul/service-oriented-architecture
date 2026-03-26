@@ -1,0 +1,192 @@
+version: '3.8'
+
+services:
+  # Flight Service Database
+  flight-db:
+    image: postgres:15-alpine
+    container_name: flight-db
+    environment:
+      POSTGRES_USER: flight_user
+      POSTGRES_PASSWORD: flight_pass
+      POSTGRES_DB: flight_db
+    ports:
+      - "5442:5432"
+    volumes:
+      - flight_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flight_user -d flight_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Booking Service Database
+  booking-db:
+    image: postgres:15-alpine
+    container_name: booking-db
+    environment:
+      POSTGRES_USER: booking_user
+      POSTGRES_PASSWORD: booking_pass
+      POSTGRES_DB: booking_db
+    ports:
+      - "5443:5432"
+    volumes:
+      - booking_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking_user -d booking_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis Master
+  redis-master:
+    image: redis:7-alpine
+    container_name: redis-master
+    command: redis-server --port 6379
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis Replica
+  redis-replica:
+    image: redis:7-alpine
+    container_name: redis-replica
+    command: redis-server --port 6380 --replicaof redis-master 6379
+    ports:
+      - "6380:6380"
+    depends_on:
+      - redis-master
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6380", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis Sentinel 1
+  redis-sentinel-1:
+    image: redis:7-alpine
+    container_name: redis-sentinel-1
+    command: >
+      sh -c "echo 'port 26379
+      sentinel monitor mymaster redis-master 6379 2
+      sentinel down-after-milliseconds mymaster 5000
+      sentinel parallel-syncs mymaster 1
+      sentinel failover-timeout mymaster 10000' > /tmp/sentinel.conf &&
+      redis-sentinel /tmp/sentinel.conf"
+    ports:
+      - "26379:26379"
+    depends_on:
+      - redis-master
+      - redis-replica
+
+  # Redis Sentinel 2
+  redis-sentinel-2:
+    image: redis:7-alpine
+    container_name: redis-sentinel-2
+    command: >
+      sh -c "echo 'port 26380
+      sentinel monitor mymaster redis-master 6379 2
+      sentinel down-after-milliseconds mymaster 5000
+      sentinel parallel-syncs mymaster 1
+      sentinel failover-timeout mymaster 10000' > /tmp/sentinel.conf &&
+      redis-sentinel /tmp/sentinel.conf"
+    ports:
+      - "26380:26380"
+    depends_on:
+      - redis-master
+      - redis-replica
+
+  # Redis Sentinel 3
+  redis-sentinel-3:
+    image: redis:7-alpine
+    container_name: redis-sentinel-3
+    command: >
+      sh -c "echo 'port 26381
+      sentinel monitor mymaster redis-master 6379 2
+      sentinel down-after-milliseconds mymaster 5000
+      sentinel parallel-syncs mymaster 1
+      sentinel failover-timeout mymaster 10000' > /tmp/sentinel.conf &&
+      redis-sentinel /tmp/sentinel.conf"
+    ports:
+      - "26381:26381"
+    depends_on:
+      - redis-master
+      - redis-replica
+
+  # Flight Service
+  flight-service:
+    build:
+      context: ./flight-service
+      dockerfile: Dockerfile
+    container_name: flight-service
+    environment:
+      DATABASE_URL: postgresql://flight_user:flight_pass@flight-db:5432/flight_db
+      REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26380,redis-sentinel-3:26381
+      REDIS_MASTER_NAME: mymaster
+      GRPC_PORT: 50051
+      API_KEY: flight-service-secret-key-12345
+      PYTHONPATH: /app/app
+    ports:
+      - "50051:50051"
+    depends_on:
+      flight-db:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_started
+      redis-sentinel-2:
+        condition: service_started
+      redis-sentinel-3:
+        condition: service_started
+    command: >
+      sh -c "
+      chmod +x /app/generate_proto.sh &&
+      /app/generate_proto.sh &&
+      alembic upgrade head &&
+      python main.py
+      "
+
+  # Booking Service
+  booking-service:
+    build:
+      context: ./booking-service
+      dockerfile: Dockerfile
+    container_name: booking-service
+    environment:
+      DATABASE_URL: postgresql://booking_user:booking_pass@booking-db:5432/booking_db
+      FLIGHT_SERVICE_HOST: flight-service
+      FLIGHT_SERVICE_PORT: 50051
+      FLIGHT_SERVICE_API_KEY: flight-service-secret-key-12345
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      PYTHONPATH: /app/app
+      # Retry settings
+      RETRY_MAX_ATTEMPTS: 3
+      RETRY_INITIAL_WAIT: 0.1
+      RETRY_MAX_WAIT: 0.4
+      # Circuit Breaker settings
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD: 5
+      CIRCUIT_BREAKER_TIMEOUT: 30
+      CIRCUIT_BREAKER_HALF_OPEN_MAX_CALLS: 1
+    ports:
+      - "8000:8000"
+    depends_on:
+      booking-db:
+        condition: service_healthy
+      flight-service:
+        condition: service_started
+    command: >
+      sh -c "
+      chmod +x /app/generate_proto.sh &&
+      /app/generate_proto.sh &&
+      alembic upgrade head &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000
+      "
+
+volumes:
+  flight_db_data:
+  booking_db_data:

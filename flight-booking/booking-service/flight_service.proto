@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package flight;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// Flight Service - управление рейсами и резервированием мест
+service FlightService {
+  // Поиск рейсов по маршруту и дате
+  rpc SearchFlights(SearchFlightsRequest) returns (SearchFlightsResponse);
+  
+  // Получение информации о рейсе по ID
+  rpc GetFlight(GetFlightRequest) returns (Flight);
+  
+  // Резервирование мест для бронирования
+  rpc ReserveSeats(ReserveSeatsRequest) returns (ReserveSeatsResponse);
+  
+  // Отмена резервирования (возврат мест)
+  rpc ReleaseReservation(ReleaseReservationRequest) returns (google.protobuf.Empty);
+  
+  // Обновление информации о рейсе (для администрирования)
+  rpc UpdateFlight(UpdateFlightRequest) returns (Flight);
+}
+
+// Статусы рейса
+enum FlightStatus {
+  FLIGHT_STATUS_UNSPECIFIED = 0;
+  SCHEDULED = 1;    // Запланирован
+  DEPARTED = 2;     // Вылетел
+  CANCELLED = 3;    // Отменен
+  COMPLETED = 4;    // Завершен
+}
+
+// Статусы резервации
+enum ReservationStatus {
+  RESERVATION_STATUS_UNSPECIFIED = 0;
+  ACTIVE = 1;       // Активна
+  RELEASED = 2;     // Освобождена
+  EXPIRED = 3;      // Истекла
+}
+
+// Рейс
+message Flight {
+  int64 id = 1;
+  string flight_number = 2;           // Номер рейса (например, SU1234)
+  string airline = 3;                 // Авиакомпания
+  string origin = 4;                  // Аэропорт вылета (IATA код, например VKO)
+  string destination = 5;             // Аэропорт прилета (IATA код, например LED)
+  google.protobuf.Timestamp departure_time = 6;  // Время вылета
+  google.protobuf.Timestamp arrival_time = 7;    // Время прилета
+  int32 total_seats = 8;              // Общее количество мест
+  int32 available_seats = 9;          // Доступные места
+  double price = 10;                  // Цена билета
+  FlightStatus status = 11;           // Статус рейса
+}
+
+// Запрос поиска рейсов
+message SearchFlightsRequest {
+  string origin = 1;                  // Аэропорт вылета (обязательно)
+  string destination = 2;             // Аэропорт прилета (обязательно)
+  google.protobuf.Timestamp date = 3; // Дата (опционально)
+}
+
+// Ответ на поиск рейсов
+message SearchFlightsResponse {
+  repeated Flight flights = 1;
+}
+
+// Запрос получения рейса
+message GetFlightRequest {
+  int64 flight_id = 1;
+}
+
+// Запрос резервирования мест
+message ReserveSeatsRequest {
+  int64 flight_id = 1;
+  int32 seat_count = 2;
+  string booking_id = 3;  // ID бронирования для идемпотентности
+}
+
+// Ответ на резервирование мест
+message ReserveSeatsResponse {
+  int64 reservation_id = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+// Запрос отмены резервирования
+message ReleaseReservationRequest {
+  string booking_id = 1;
+}
+
+// Запрос обновления рейса
+message UpdateFlightRequest {
+  int64 flight_id = 1;
+  optional int32 available_seats = 2;
+  optional double price = 3;
+  optional FlightStatus status = 4;
+}
